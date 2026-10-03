@@ -204,14 +204,49 @@ Example: topic `orders`, **6 partitions**, `RF=3`, **3 brokers**:
                                                    for one partition, then switch
 ```
 
-Example with 3 partitions (the Java client uses the **murmur2** hash):
+**What is a hash?** A **hash function** takes data of any size (for example, the text `"user-1"`)
+and returns a **number**. Two properties matter here:
+
+1. **Deterministic:** the same input always gives the same number. `"user-1"` always becomes
+   the same value, today, tomorrow, on any machine.
+2. **Spreads well:** similar keys (`user-1`, `user-2`) give very different numbers, so the
+   records are distributed across the partitions.
+
+The Java client uses a hash function called **murmur2**. The formula is:
+
+```
+partition = toPositive(murmur2(key bytes)) % number_of_partitions
+```
+
+Step by step with key `"user-1"` and 3 partitions (real values):
+
+```
+"user-1"  → bytes          → u s e r - 1
+          → murmur2        → 1404122828
+          → toPositive     → 1404122828   (clears the sign bit if the number is negative)
+          → % 3            → 2            → partition 2
+```
+
+The `%` (modulo) is the remainder of the division. With 3 partitions the result can only be
+0, 1 or 2, so it turns a huge number into a valid partition number.
+
+Example with 3 partitions (real murmur2 results):
 
 ```
 key="user-1"  → hash % 3 = 2 → always partition 2
-key="user-2"  → hash % 3 = 0 → always partition 0
+key="user-4"  → hash % 3 = 1 → always partition 1
+key="user-8"  → hash % 3 = 0 → always partition 0
 key="user-7"  → hash % 3 = 2 → partition 2 (keys can share a partition)
 key=null      → any partition (balanced, but no order guarantee)
 ```
+
+**Why it matters:** because the hash is deterministic, all records with key `"user-1"` go to the
+same partition. Inside a partition Kafka keeps the order, so all `user-1` events are read in the
+order they were sent (see 4.4).
+
+> ⚠️ If you change the number of partitions (for example, 3 → 4), `% 4` gives a different
+> result, and the same key can move to another partition. Ordering per key breaks during the
+> change (see 4.9).
 
 > ⚠️ Gotcha: different client libraries can use **different hash functions**. The Java client
 > uses murmur2. librdkafka (used by Python `confluent-kafka`, Go, .NET) uses CRC32 by default.
@@ -649,5 +684,7 @@ build everything by hand.
 | rebalance | redistribuição (de partições) |
 | retention | retenção |
 | throughput | vazão |
+| hash function | função hash (transforma um dado em um número fixo) |
+| modulo (`%`) | módulo (resto da divisão) |
 | durability | durabilidade |
 | quorum | quórum (maioria para decidir) |
